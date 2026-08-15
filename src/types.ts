@@ -36,17 +36,21 @@ export const KNOWN_UNSUPPORTED_EXTENSIONS = ['.tif', '.tiff', '.heic', '.heif', 
 
 /**
  * Where resized output goes, as path segments beneath the chosen folder.
- * Nested rather than a single folder so a batch root ends up with one tidy
- * `done/` containing everything the tool produced.
+ * A single level: this tool only ever produces resized copies, so wrapping
+ * that in a parent folder would add depth without adding meaning.
  */
-export const OUTPUT_PATH_SEGMENTS = ['done', 'resized'] as const;
+export const OUTPUT_PATH_SEGMENTS = ['resized'] as const;
 
 /**
  * Top-level folder names never descended into during a scan, compared
- * lower-case. Without this, running the tool twice on the same root would
- * find its own output and resize the resized files — growing `done/` on every
- * run. `resized` is here too because it was the output folder in the first
- * version of this tool and may still exist in folders people have already run.
+ * lower-case. Without this, running the tool twice on the same root would find
+ * its own output and resize the resized files — growing the output folder on
+ * every run.
+ *
+ * `done` is kept alongside the current `resized` because an earlier version
+ * wrote to `done/resized/`. Folders already processed by that version still
+ * contain one, and it must stay excluded so those outputs are never rescanned
+ * as input.
  */
 export const SCAN_EXCLUDED_TOP_LEVEL = ['done', 'resized'] as const;
 

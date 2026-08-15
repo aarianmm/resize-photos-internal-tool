@@ -36,7 +36,7 @@ picked.
 The tool tells you what it found:
 
 > Found **214 images** in `3320`, across **12 folders**. 3 files skipped.
-> They'll be written to `3320/done/resized/`.
+> They'll be written to `3320/resized/`.
 
 If the count looks wrong, stop and check you picked the right folder. Nothing
 has been changed yet at this point.
@@ -49,8 +49,8 @@ You'll see a progress bar. A few hundred photos usually takes a minute or two.
 Keep the tab open and your laptop awake while it runs — you can use other apps.
 
 When it's done you'll get a summary. Your resized photos are in a new folder
-called **`done`** inside the folder you picked, under `done/resized`. Any
-subfolders you had are recreated in there with the same names.
+called **`resized`** inside the folder you picked. Any subfolders you had are
+recreated in there with the same names.
 
 ---
 
@@ -61,7 +61,7 @@ resizing happens inside your browser, on your own machine — which is also why
 it keeps working if your internet drops mid-batch.
 
 **Your original photos are not touched.** They stay exactly where they were,
-unchanged. The tool only ever adds a new `done` folder. If something looks
+unchanged. The tool only ever adds a new `resized` folder. If something looks
 wrong, your originals are still there.
 
 > ⚠️ This is different from the old process, which moved originals into a
@@ -74,7 +74,7 @@ stretched. That's intentional and matches what we've always done.
 **Filenames and folders stay the same.** `CARAMELCAFÉ.jpg` comes out as
 `CARAMELCAFÉ.jpg`, and a photo in `3320` comes out in `3320`.
 
-**Running it twice is safe.** The tool ignores its own `done` folder, so it
+**Running it twice is safe.** The tool ignores its own `resized` folder, so it
 won't resize photos it already resized.
 
 ---

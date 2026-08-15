@@ -128,9 +128,9 @@ export interface FileWithPath {
  * Walk a directory handle recursively, collecting every image beneath it and
  * recording each one's path relative to the root that was chosen.
  *
- * Two folders are never descended into: the tool's own output folder (`done`)
- * and the legacy `resized` folder from the first version. Scanning those would
- * mean re-resizing our own output on a second run.
+ * The tool's own output folder is never descended into — `resized`, plus
+ * `done` from an interim version that nested output as `done/resized`.
+ * Scanning those would mean re-resizing our own output on a second run.
  *
  * Depth is capped at MAX_SCAN_DEPTH. Handle-based traversal can't follow a
  * symlink loop the way a filesystem walk can, but a cap costs nothing and
@@ -184,9 +184,9 @@ export async function scanEntries(
 }
 
 /**
- * Read-only lookup of the default `done/resized` output folder inside the
- * chosen input folder. Returns null if any segment doesn't exist yet — nothing
- * is created here, only when the user confirms the batch.
+ * Read-only lookup of the default `resized` output folder inside the chosen
+ * input folder. Returns null if it doesn't exist yet — nothing is created
+ * here, only when the user confirms the batch.
  */
 export async function findDefaultOutputDir(inputDir: FileSystemDirectoryHandle): Promise<FileSystemDirectoryHandle | null> {
   let current = inputDir;

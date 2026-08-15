@@ -63,14 +63,14 @@ Single page, three states.
 │     │   or  [ Choose folder… ]       │       │
 │     └────────────────────────────────┘       │
 │                                              │
-│   Output: <folder>/done/resized/  [Change…]  │
+│   Output: <folder>/resized/    [Change…]     │
 │   Your images never leave this computer.     │
 └──────────────────────────────────────────────┘
 ```
 
 **Confirm** — after a folder is selected, before any writing:
 > Found **214 images** in `3320`, across **12 folders**. 3 files skipped (unsupported type).
-> They'll be written to `3320/done/resized/`.
+> They'll be written to `3320/resized/`.
 > `[ Resize 214 images ]`
 
 **Running** — progress bar, `112 / 214`, current filename, elapsed/remaining
@@ -86,20 +86,22 @@ Skipped and failed files are listed by name with a plain-English reason
 ### Interaction rules
 
 - **One permission prompt.** `showDirectoryPicker({ mode: 'readwrite' })` grants
-  read on the batch and write on the `done/resized/` child in a single dialog.
+  read on the batch and write on the `resized/` child in a single dialog.
 - **Dragging a folder onto the page works too**, via
   `DataTransferItem.getAsFileSystemHandle()` — same handle type, same code path.
-- **Default output is a `done/resized/` subfolder** inside the chosen folder,
+- **Default output is a `resized/` subfolder** inside the chosen folder,
   created on demand. Each image lands at the same relative path it had in the
-  source, so `3320/img.jpg` becomes `done/resized/3320/img.jpg`. "Change…" opens a second picker for a different destination.
-- **Existing output files**: if `done/resized/` already contains files at
+  source, so `3320/img.jpg` becomes `resized/3320/img.jpg`. One level, not two:
+  the tool only ever produces resized copies, so a parent folder wrapping a
+  single child would add depth without adding meaning. "Change…" opens a second picker for a different destination.
+- **Existing output files**: if `resized/` already contains files at
   matching relative paths, ask once — *Overwrite / Skip already-done / Cancel* — and remember the
   answer for the rest of the batch.
 - **Nothing is written until the user confirms.** Scanning is read-only.
-- **The output folder is never scanned as input.** A top-level `done/` (and the
-  legacy `resized/` from the first version) is skipped during traversal.
+- **The output folder is never scanned as input.** A top-level `resized/` is
+  skipped during traversal, and so is `done/`, which an interim version used.
   Without this, a second run on the same root would resize its own output and
-  `done/` would grow on every pass.
+  the folder would grow on every pass.
 
 ---
 
