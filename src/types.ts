@@ -34,10 +34,35 @@ export const KNOWN_UNSUPPORTED_EXTENSIONS = ['.tif', '.tiff', '.heic', '.heif', 
 // Scanning
 // ---------------------------------------------------------------------------
 
-/** One file found in the chosen folder, already triaged. */
+/**
+ * Where resized output goes, as path segments beneath the chosen folder.
+ * Nested rather than a single folder so a batch root ends up with one tidy
+ * `done/` containing everything the tool produced.
+ */
+export const OUTPUT_PATH_SEGMENTS = ['done', 'resized'] as const;
+
+/**
+ * Top-level folder names never descended into during a scan, compared
+ * lower-case. Without this, running the tool twice on the same root would
+ * find its own output and resize the resized files — growing `done/` on every
+ * run. `resized` is here too because it was the output folder in the first
+ * version of this tool and may still exist in folders people have already run.
+ */
+export const SCAN_EXCLUDED_TOP_LEVEL = ['done', 'resized'] as const;
+
+/** How deep the recursive scan will go before giving up. Guards against cycles. */
+export const MAX_SCAN_DEPTH = 32;
+
+/** One file found in the chosen folder tree, already triaged. */
 export interface ScannedFile {
   /** Filename including extension, exactly as on disk. Never modified. */
   name: string;
+  /**
+   * Path relative to the chosen folder, POSIX-separated — `img.jpg` at the
+   * root, `3320/img.jpg` in a subfolder. This is what gets recreated under
+   * the output folder, so the source tree's shape is preserved exactly.
+   */
+  relativePath: string;
   /** Handle in the input directory. Present on the File System Access path. */
   handle?: FileSystemFileHandle;
   /** Direct File. Present on the <input webkitdirectory> fallback path. */
@@ -50,8 +75,14 @@ export interface ScanResult {
   images: ScannedFile[];
   /** Files we will not process, with a plain-English reason for the user. */
   skipped: { name: string; reason: string }[];
-  /** Names already present in the output directory (collision check). */
+  /**
+   * Relative paths already present in the output folder (collision check).
+   * Paths, not bare names, so `3320/img.jpg` and `3321/img.jpg` are treated
+   * as the different files they are.
+   */
   existingOutputNames: Set<string>;
+  /** Number of subfolders that contributed images, for the confirm screen. */
+  folderCount: number;
 }
 
 /** What to do when an output file of the same name already exists. */

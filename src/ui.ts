@@ -144,6 +144,8 @@ export interface ConfirmViewModel {
   outputLabel: string;
   outputMode: OutputMode;
   imageCount: number;
+  /** How many folders contributed images, so a recursive scan is visible. */
+  folderCount: number;
   skipped: { name: string; reason: string }[];
   canChangeOutput: boolean;
 }
@@ -160,9 +162,15 @@ export function renderConfirm(root: HTMLElement, vm: ConfirmViewModel, handlers:
   const card = el('section', { class: 'card' });
   card.append(el('h1', { class: 'title' }, ['Ready to resize']));
 
+  // Naming the folder count makes it obvious the scan went into subfolders —
+  // without it, a user seeing one number can't tell whether nested batches
+  // were picked up.
+  const where = vm.folderCount > 1
+    ? `${vm.inputLabel}, across ${formatCount(vm.folderCount, 'folder')}`
+    : vm.inputLabel;
   const summaryLine = vm.skipped.length > 0
-    ? `Found ${formatCount(vm.imageCount, 'image')} in ${vm.inputLabel}. ${formatCount(vm.skipped.length, 'file')} skipped.`
-    : `Found ${formatCount(vm.imageCount, 'image')} in ${vm.inputLabel}.`;
+    ? `Found ${formatCount(vm.imageCount, 'image')} in ${where}. ${formatCount(vm.skipped.length, 'file')} skipped.`
+    : `Found ${formatCount(vm.imageCount, 'image')} in ${where}.`;
   card.append(el('p', { class: 'summary-line' }, [summaryLine]));
 
   if (vm.skipped.length > 0) {

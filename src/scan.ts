@@ -9,7 +9,14 @@
  */
 
 import type { ScannedFile, ScanResult } from './types';
-import { SUPPORTED_EXTENSIONS, KNOWN_UNSUPPORTED_EXTENSIONS, DECODE_ONLY_EXTENSIONS } from './types';
+import {
+  SUPPORTED_EXTENSIONS,
+  KNOWN_UNSUPPORTED_EXTENSIONS,
+  DECODE_ONLY_EXTENSIONS,
+  SCAN_EXCLUDED_TOP_LEVEL,
+  OUTPUT_PATH_SEGMENTS,
+  MAX_SCAN_DEPTH,
+} from './types';
 
 // ---------------------------------------------------------------------------
 // Ambient types for the File System Access API surface TypeScript's bundled
@@ -100,65 +107,120 @@ function byNameAlphabetical(a: { name: string }, b: { name: string }): number {
   return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+/** Groups a folder's images together and keeps folders in a predictable order. */
+function byPathAlphabetical(a: { relativePath: string }, b: { relativePath: string }): number {
+  return a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+const EXCLUDED_TOP_LEVEL_SET = new Set<string>(SCAN_EXCLUDED_TOP_LEVEL);
+
+/** A file plus its path relative to the chosen root, for APIs that don't carry one. */
+export interface FileWithPath {
+  file: File;
+  relativePath: string;
+}
+
 // ---------------------------------------------------------------------------
 // File System Access path
 // ---------------------------------------------------------------------------
 
 /**
- * Walk one directory handle, one level deep (batches are flat — see
- * PLAN.md). Sub-folders are ignored entirely: they're neither processed nor
- * reported, since a nested folder isn't a file the user expected touched.
+ * Walk a directory handle recursively, collecting every image beneath it and
+ * recording each one's path relative to the root that was chosen.
+ *
+ * Two folders are never descended into: the tool's own output folder (`done`)
+ * and the legacy `resized` folder from the first version. Scanning those would
+ * mean re-resizing our own output on a second run.
+ *
+ * Depth is capped at MAX_SCAN_DEPTH. Handle-based traversal can't follow a
+ * symlink loop the way a filesystem walk can, but a cap costs nothing and
+ * turns a pathological tree into a partial result rather than a hung tab.
  */
 export async function scanEntries(
   dir: FileSystemDirectoryHandle,
-): Promise<{ images: ScannedFile[]; skipped: { name: string; reason: string }[] }> {
+): Promise<{ images: ScannedFile[]; skipped: { name: string; reason: string }[]; folderCount: number }> {
   const images: ScannedFile[] = [];
   const skipped: { name: string; reason: string }[] = [];
+  const foldersWithImages = new Set<string>();
 
-  for await (const [name, handle] of dir.entries()) {
-    if (handle.kind !== 'file') continue;
-    const reason = triageOne(name);
-    if (reason === null) {
-      const fileHandle = handle as FileSystemFileHandle;
-      let size = 0;
-      try {
-        const f = await fileHandle.getFile();
-        size = f.size;
-      } catch {
-        // Metadata read failed; still list the file, worker will surface
-        // the real error at resize time rather than dropping it silently.
+  async function walk(current: FileSystemDirectoryHandle, prefix: string, depth: number): Promise<void> {
+    if (depth > MAX_SCAN_DEPTH) return;
+
+    for await (const [name, handle] of current.entries()) {
+      const relativePath = prefix ? `${prefix}/${name}` : name;
+
+      if (handle.kind === 'directory') {
+        // Only the top level is excluded: a subfolder legitimately called
+        // "done" deeper in someone's tree is their data, not our output.
+        if (depth === 0 && EXCLUDED_TOP_LEVEL_SET.has(name.toLowerCase())) continue;
+        await walk(handle as FileSystemDirectoryHandle, relativePath, depth + 1);
+        continue;
       }
-      images.push({ name, handle: fileHandle, size });
-    } else if (reason !== 'JUNK') {
-      skipped.push({ name, reason });
+
+      const reason = triageOne(name);
+      if (reason === null) {
+        const fileHandle = handle as FileSystemFileHandle;
+        let size = 0;
+        try {
+          const f = await fileHandle.getFile();
+          size = f.size;
+        } catch {
+          // Metadata read failed; still list the file, worker will surface
+          // the real error at resize time rather than dropping it silently.
+        }
+        images.push({ name, relativePath, handle: fileHandle, size });
+        foldersWithImages.add(prefix);
+      } else if (reason !== 'JUNK') {
+        skipped.push({ name: relativePath, reason });
+      }
     }
   }
 
-  images.sort(byNameAlphabetical);
+  await walk(dir, '', 0);
+
+  images.sort(byPathAlphabetical);
   skipped.sort(byNameAlphabetical);
-  return { images, skipped };
+  return { images, skipped, folderCount: foldersWithImages.size };
 }
 
 /**
- * Read-only lookup of the default `resized` output folder inside the chosen
- * input folder. Returns null if it doesn't exist yet — it is never created
- * here, only when the user confirms the batch.
+ * Read-only lookup of the default `done/resized` output folder inside the
+ * chosen input folder. Returns null if any segment doesn't exist yet — nothing
+ * is created here, only when the user confirms the batch.
  */
 export async function findDefaultOutputDir(inputDir: FileSystemDirectoryHandle): Promise<FileSystemDirectoryHandle | null> {
-  try {
-    return await inputDir.getDirectoryHandle('resized', { create: false });
-  } catch {
-    return null;
+  let current = inputDir;
+  for (const segment of OUTPUT_PATH_SEGMENTS) {
+    try {
+      current = await current.getDirectoryHandle(segment, { create: false });
+    } catch {
+      return null;
+    }
   }
+  return current;
 }
 
-/** Names of files already present in a (possibly nonexistent) output folder. */
+/**
+ * Relative paths of files already in a (possibly nonexistent) output folder.
+ * Recursive, so a collision is detected at the same path the write would use.
+ */
 export async function getExistingNames(dir: FileSystemDirectoryHandle | null): Promise<Set<string>> {
   const names = new Set<string>();
   if (!dir) return names;
-  for await (const [name, handle] of dir.entries()) {
-    if (handle.kind === 'file') names.add(name);
+
+  async function walk(current: FileSystemDirectoryHandle, prefix: string, depth: number): Promise<void> {
+    if (depth > MAX_SCAN_DEPTH) return;
+    for await (const [name, handle] of current.entries()) {
+      const relativePath = prefix ? `${prefix}/${name}` : name;
+      if (handle.kind === 'file') {
+        names.add(relativePath);
+      } else {
+        await walk(handle as FileSystemDirectoryHandle, relativePath, depth + 1);
+      }
+    }
   }
+
+  await walk(dir, '', 0);
   return names;
 }
 
@@ -167,11 +229,11 @@ export async function scanDirectory(
   inputDir: FileSystemDirectoryHandle,
   outputDir: FileSystemDirectoryHandle | null,
 ): Promise<ScanResult> {
-  const [{ images, skipped }, existingOutputNames] = await Promise.all([
+  const [{ images, skipped, folderCount }, existingOutputNames] = await Promise.all([
     scanEntries(inputDir),
     getExistingNames(outputDir),
   ]);
-  return { images, skipped, existingOutputNames };
+  return { images, skipped, existingOutputNames, folderCount };
 }
 
 // ---------------------------------------------------------------------------
@@ -186,33 +248,49 @@ export async function scanDirectory(
  * `3320/photo.jpg`; anything nested more than one level deep is a
  * sub-folder and is ignored, matching the File System Access path.
  */
-export function triageFiles(files: Iterable<File>): { images: ScannedFile[]; skipped: { name: string; reason: string }[] } {
+export function triageFiles(
+  files: Iterable<File | FileWithPath>,
+): { images: ScannedFile[]; skipped: { name: string; reason: string }[]; folderCount: number } {
   const images: ScannedFile[] = [];
   const skipped: { name: string; reason: string }[] = [];
+  const foldersWithImages = new Set<string>();
 
-  for (const file of files) {
-    const relPath = file.webkitRelativePath || file.name;
-    const parts = relPath.split('/').filter(Boolean);
-    if (parts.length > 2) continue; // nested sub-folder entry, ignore silently
-    const name = parts.length > 0 ? parts[parts.length - 1] : file.name;
+  for (const item of files) {
+    const file = item instanceof File ? item : item.file;
+    // webkitdirectory paths are prefixed with the selected folder's own name
+    // ("3320/sub/img.jpg"); that first segment is the root the user picked,
+    // so it is dropped to make the path relative to it. Drag-and-drop entries
+    // arrive already relative and carry their path explicitly.
+    const rawPath = item instanceof File ? file.webkitRelativePath || file.name : item.relativePath;
+    const parts = rawPath.split('/').filter(Boolean);
+    const relativeParts = item instanceof File && file.webkitRelativePath ? parts.slice(1) : parts;
+
+    if (relativeParts.length === 0) continue;
+    if (relativeParts.length > 1 && EXCLUDED_TOP_LEVEL_SET.has(relativeParts[0].toLowerCase())) {
+      continue; // our own output from a previous run
+    }
+
+    const name = relativeParts[relativeParts.length - 1];
+    const relativePath = relativeParts.join('/');
     const reason = triageOne(name);
     if (reason === null) {
-      images.push({ name, file, size: file.size });
+      images.push({ name, relativePath, file, size: file.size });
+      foldersWithImages.add(relativeParts.slice(0, -1).join('/'));
     } else if (reason !== 'JUNK') {
-      skipped.push({ name, reason });
+      skipped.push({ name: relativePath, reason });
     }
   }
 
-  images.sort(byNameAlphabetical);
+  images.sort(byPathAlphabetical);
   skipped.sort(byNameAlphabetical);
-  return { images, skipped };
+  return { images, skipped, folderCount: foldersWithImages.size };
 }
 
-export function scanFileList(files: FileList | File[]): ScanResult {
-  const { images, skipped } = triageFiles(Array.from(files));
+export function scanFileList(files: FileList | (File | FileWithPath)[]): ScanResult {
+  const { images, skipped, folderCount } = triageFiles(Array.from(files as Iterable<File | FileWithPath>));
   // The fallback path delivers a fresh .zip every run — there is no existing
   // output folder to collide with.
-  return { images, skipped, existingOutputNames: new Set() };
+  return { images, skipped, existingOutputNames: new Set(), folderCount };
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +302,7 @@ export function scanFileList(files: FileList | File[]): ScanResult {
  * System Access capable browsers) or a flat array of Files (legacy entries
  * API, Firefox/Safari). Returns null if the drop wasn't a folder.
  */
-export async function resolveDroppedItem(item: DataTransferItem): Promise<{ kind: 'handle'; handle: FileSystemDirectoryHandle } | { kind: 'files'; files: File[] } | null> {
+export async function resolveDroppedItem(item: DataTransferItem): Promise<{ kind: 'handle'; handle: FileSystemDirectoryHandle } | { kind: 'files'; files: FileWithPath[] } | null> {
   if (typeof item.getAsFileSystemHandle === 'function') {
     const handle = await item.getAsFileSystemHandle();
     if (handle && handle.kind === 'directory') {
@@ -254,8 +332,14 @@ function entryToFile(entry: FileSystemFileEntry): Promise<File> {
   });
 }
 
-/** One level deep only, matching the flat-batch assumption elsewhere. */
-async function readEntryFilesFlat(dirEntry: FileSystemDirectoryEntry): Promise<File[]> {
+/**
+ * Recursive walk of a dropped folder via the legacy entries API, carrying each
+ * file's path relative to the dropped root. File objects from this API have no
+ * webkitRelativePath, so the path is tracked alongside them explicitly.
+ */
+async function readEntryFilesFlat(dirEntry: FileSystemDirectoryEntry, prefix = '', depth = 0): Promise<FileWithPath[]> {
+  if (depth > MAX_SCAN_DEPTH) return [];
+
   const reader = dirEntry.createReader();
   const allEntries: FileSystemEntry[] = [];
   // readEntries() must be called repeatedly until it yields an empty array —
@@ -266,14 +350,18 @@ async function readEntryFilesFlat(dirEntry: FileSystemDirectoryEntry): Promise<F
     allEntries.push(...batch);
   }
 
-  const files: File[] = [];
+  const files: FileWithPath[] = [];
   for (const entry of allEntries) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isFile) {
       try {
-        files.push(await entryToFile(entry as FileSystemFileEntry));
+        files.push({ file: await entryToFile(entry as FileSystemFileEntry), relativePath });
       } catch {
         // Unreadable entry; triage will simply never see it.
       }
+    } else if (entry.isDirectory) {
+      if (depth === 0 && EXCLUDED_TOP_LEVEL_SET.has(entry.name.toLowerCase())) continue;
+      files.push(...(await readEntryFilesFlat(entry as FileSystemDirectoryEntry, relativePath, depth + 1)));
     }
   }
   return files;

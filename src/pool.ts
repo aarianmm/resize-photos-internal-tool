@@ -106,7 +106,7 @@ export class WorkerPool {
           nextIndex = idx + 1;
           const scanned = files[idx];
 
-          onFileStart?.(scanned.name);
+          onFileStart?.(scanned.relativePath);
           const outcome = await this.processOne(worker, scanned, idx, mimeTypeFor, quality);
           completed += 1;
           await onResult(outcome);
@@ -139,12 +139,15 @@ export class WorkerPool {
         throw new Error('no source for file');
       }
     } catch {
-      return { id, name: scanned.name, ok: false, reason: readErrorMessage() };
+      return { id, name: scanned.relativePath, ok: false, reason: readErrorMessage() };
     }
 
     const request: ResizeRequest = {
       id,
-      name: scanned.name,
+      // The relative path travels with the request so the response can be
+      // written back to the matching spot in the output tree. The worker
+      // treats it as an opaque label and only echoes it back.
+      name: scanned.relativePath,
       file,
       mimeType: mimeTypeFor(scanned.name),
       quality,

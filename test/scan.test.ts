@@ -93,6 +93,75 @@ describe('triage: OS clutter', () => {
   });
 });
 
+describe('triage: subfolder structure', () => {
+  // webkitdirectory prefixes every path with the chosen folder's own name.
+  // That first segment is the root itself and must be stripped, or every
+  // output would be nested one level too deep.
+  function pickedFile(relPathUnderRoot: string, root = 'BATCH'): File {
+    const f = new File([new Uint8Array(10)], relPathUnderRoot.split('/').pop()!, { type: '' });
+    Object.defineProperty(f, 'webkitRelativePath', { value: `${root}/${relPathUnderRoot}` });
+    return f;
+  }
+
+  it('finds images inside subfolders instead of reporting zero', () => {
+    // The reported bug: these used to be dropped entirely.
+    const result = triageFiles([
+      pickedFile('3320/a.jpg'),
+      pickedFile('3321/b.jpg'),
+      pickedFile('top.jpg'),
+    ]);
+    expect(result.images).toHaveLength(3);
+  });
+
+  it('preserves the folder structure in each relative path', () => {
+    const result = triageFiles([pickedFile('3320/a.jpg'), pickedFile('top.jpg')]);
+    expect(result.images.map((i) => i.relativePath).sort()).toEqual(['3320/a.jpg', 'top.jpg']);
+  });
+
+  it('handles deeply nested folders', () => {
+    const result = triageFiles([pickedFile('a/b/c/d/deep.jpg')]);
+    expect(result.images[0].relativePath).toBe('a/b/c/d/deep.jpg');
+    expect(result.images[0].name).toBe('deep.jpg');
+  });
+
+  it('keeps same-named files in different folders apart', () => {
+    // These collapse into one entry if paths are keyed by filename alone.
+    const result = triageFiles([pickedFile('3320/img.jpg'), pickedFile('3321/img.jpg')]);
+    expect(result.images.map((i) => i.relativePath)).toEqual(['3320/img.jpg', '3321/img.jpg']);
+  });
+
+  it('counts the folders that contributed images', () => {
+    const result = triageFiles([
+      pickedFile('3320/a.jpg'),
+      pickedFile('3320/b.jpg'),
+      pickedFile('3321/c.jpg'),
+    ]);
+    expect(result.folderCount).toBe(2);
+  });
+
+  it('never descends into its own output folder', () => {
+    // Without this, a second run resizes the first run's output and `done/`
+    // grows on every pass.
+    const result = triageFiles([
+      pickedFile('done/resized/3320/a.jpg'),
+      pickedFile('resized/old.jpg'),
+      pickedFile('3320/a.jpg'),
+    ]);
+    expect(result.images.map((i) => i.relativePath)).toEqual(['3320/a.jpg']);
+  });
+
+  it('ignores output-folder exclusion for a file at the root', () => {
+    // A file literally named "done" at the top level is not a folder.
+    const result = triageFiles([pickedFile('done.jpg')]);
+    expect(result.images.map((i) => i.relativePath)).toEqual(['done.jpg']);
+  });
+
+  it('reports skipped files by their full path, not a bare name', () => {
+    const result = triageFiles([pickedFile('3320/scan.tif')]);
+    expect(result.skipped[0].name).toBe('3320/scan.tif');
+  });
+});
+
 describe('triage: ordering', () => {
   it('sorts numerically so 2.jpg precedes 10.jpg', () => {
     const result = triageFiles([fakeFile('10.jpg'), fakeFile('2.jpg'), fakeFile('1.jpg')]);

@@ -29,16 +29,15 @@ terminal.
 |---|---|
 | Delivery | **Browser tool, no install.** Static page, all processing client-side. |
 | Hosting | **Hosted URL** — one link, always current. |
-| Workflow | **Simple: pick folder → resized output.** No `Done/original` moves, no folder deletion. |
+| Workflow | **Pick a folder → resized output.** Scans subfolders recursively and mirrors their structure. No `original/` moves, no folder deletion. |
 | Resize mode | **Hard stretch to 3000×3000.** No fit, pad, or crop. Non-square sources distort, exactly as today. |
-| Filenames | **Unchanged** — same basename, same extension. |
+| Filenames | **Unchanged** — same basename, same extension, same position in the folder tree. |
 | Format | **Unchanged** — JPEG in → JPEG out, PNG in → PNG out. |
 | Encoding | **JPEG quality 0.92**, with **EXIF + ICC preserved** from the source. |
 
 ### Explicitly out of scope (v1)
 
-- The Dropbox `Done/resized` + `Done/original` + delete-empty-folder workflow. Originals stay put.
-- Recursive subfolder traversal (batches are flat, per `task.md`).
+- Moving originals into an `original/` folder, and deleting emptied batch folders. Originals stay put.
 - Renaming, watermarking, cropping, background removal.
 - Any server-side processing, accounts, or logging of file names/content.
 
@@ -47,6 +46,12 @@ terminal.
 ## 3. User experience
 
 Single page, three states.
+
+> **Revised after first use.** The original plan assumed flat batch folders,
+> because that is what `task.md` described. In practice people select a parent
+> folder containing several batch subfolders, which scanned as zero images.
+> Scanning is now recursive and the source tree's shape is mirrored into the
+> output.
 
 **Idle**
 ```
@@ -58,14 +63,14 @@ Single page, three states.
 │     │   or  [ Choose folder… ]       │       │
 │     └────────────────────────────────┘       │
 │                                              │
-│   Output: <folder>/resized/    [Change…]     │
+│   Output: <folder>/done/resized/  [Change…]  │
 │   Your images never leave this computer.     │
 └──────────────────────────────────────────────┘
 ```
 
 **Confirm** — after a folder is selected, before any writing:
-> Found **214 images** in `3320`. 3 files skipped (unsupported type).
-> They'll be written to `3320/resized/`.
+> Found **214 images** in `3320`, across **12 folders**. 3 files skipped (unsupported type).
+> They'll be written to `3320/done/resized/`.
 > `[ Resize 214 images ]`
 
 **Running** — progress bar, `112 / 214`, current filename, elapsed/remaining
@@ -81,15 +86,20 @@ Skipped and failed files are listed by name with a plain-English reason
 ### Interaction rules
 
 - **One permission prompt.** `showDirectoryPicker({ mode: 'readwrite' })` grants
-  read on the batch and write on the `resized/` child in a single dialog.
+  read on the batch and write on the `done/resized/` child in a single dialog.
 - **Dragging a folder onto the page works too**, via
   `DataTransferItem.getAsFileSystemHandle()` — same handle type, same code path.
-- **Default output is a `resized/` subfolder** inside the chosen folder, created
-  on demand. "Change…" opens a second picker for a different destination.
-- **Existing output files**: if `resized/` already contains files with matching
-  names, ask once — *Overwrite / Skip already-done / Cancel* — and remember the
+- **Default output is a `done/resized/` subfolder** inside the chosen folder,
+  created on demand. Each image lands at the same relative path it had in the
+  source, so `3320/img.jpg` becomes `done/resized/3320/img.jpg`. "Change…" opens a second picker for a different destination.
+- **Existing output files**: if `done/resized/` already contains files at
+  matching relative paths, ask once — *Overwrite / Skip already-done / Cancel* — and remember the
   answer for the rest of the batch.
 - **Nothing is written until the user confirms.** Scanning is read-only.
+- **The output folder is never scanned as input.** A top-level `done/` (and the
+  legacy `resized/` from the first version) is skipped during traversal.
+  Without this, a second run on the same root would resize its own output and
+  `done/` would grow on every pass.
 
 ---
 

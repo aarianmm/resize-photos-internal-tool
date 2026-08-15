@@ -10,13 +10,14 @@ No install, no upload, no terminal.
 
 ## What it does
 
-Point it at a folder of images. It writes resized copies into a `resized/`
-subfolder and leaves your originals exactly where they are.
+Point it at a folder of images. It scans subfolders too, writes resized copies
+into a `done/resized/` subfolder mirroring the original structure, and leaves
+your originals exactly where they are.
 
 - **Hard stretch to 3000 × 3000.** Non-square sources are distorted, not padded
   or cropped — matching the `sips -z 3000 3000` behaviour this tool replaces.
-- **Filenames and formats unchanged.** JPEG in, JPEG out. `CARAMELCAFÉ.jpg`
-  stays `CARAMELCAFÉ.jpg`.
+- **Filenames, formats and folder structure unchanged.** JPEG in, JPEG out.
+  `3320/CARAMELCAFÉ.jpg` becomes `done/resized/3320/CARAMELCAFÉ.jpg`.
 - **EXIF and ICC preserved**, with orientation normalised so nothing gets
   double-rotated.
 - **Images never leave the machine.** All processing is client-side; the only
@@ -31,6 +32,9 @@ twice over the network.
 One difference worth knowing: this tool does **not** move originals into
 `Done/original/` or delete the emptied batch folder. Originals stay put. See
 PLAN.md §2 for why.
+
+Select the parent folder holding several batch folders and it handles them all
+in one pass, recreating each batch folder under `done/resized/`.
 
 ---
 

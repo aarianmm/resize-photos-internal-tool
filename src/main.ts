@@ -6,9 +6,10 @@
  */
 
 import type { ScannedFile, ScanResult, CollisionPolicy, FileOutcome, BatchSummary, ResizeResponse } from './types';
-import { JPEG_QUALITY } from './types';
+import { JPEG_QUALITY, OUTPUT_PATH_SEGMENTS } from './types';
 import { detectCapabilities } from './capabilities';
 import * as scan from './scan';
+import type { FileWithPath } from './scan';
 import { WorkerPool } from './pool';
 import * as ui from './ui';
 import { ZipWriter } from './zip';
@@ -58,6 +59,7 @@ interface Session {
 }
 
 function freshSession(): Session {
+  dirCache.clear();
   return {
     inputDirHandle: null,
     inputLabel: '',
@@ -91,10 +93,14 @@ function sanitizeFilenamePart(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'resized';
 }
 
-function folderLabelFromFiles(files: File[]): string {
-  const withPath = files.find((f) => f.webkitRelativePath);
-  if (withPath) {
-    const first = withPath.webkitRelativePath.split('/')[0];
+function folderLabelFromFiles(files: (File | FileWithPath)[]): string {
+  // Only webkitdirectory paths carry the chosen folder's own name as their
+  // first segment. Dropped-folder paths are already relative to it, so there
+  // is nothing to recover and the generic label stands.
+  for (const item of files) {
+    if (!(item instanceof File)) continue;
+    if (!item.webkitRelativePath) continue;
+    const first = item.webkitRelativePath.split('/')[0];
     if (first) return first;
   }
   return 'the selected folder';
@@ -159,12 +165,12 @@ async function beginScanFromHandle(handle: FileSystemDirectoryHandle): Promise<v
   session.inputDirHandle = handle;
   session.inputLabel = handle.name;
   session.outputDirHandle = await scan.findDefaultOutputDir(handle);
-  session.outputLabel = `${handle.name}/resized/`;
+  session.outputLabel = `${handle.name}/${OUTPUT_PATH_SEGMENTS.join('/')}/`;
   session.scanResult = await scan.scanDirectory(handle, session.outputDirHandle);
   showConfirm();
 }
 
-function beginScanFromFiles(files: File[]): void {
+function beginScanFromFiles(files: (File | FileWithPath)[]): void {
   session = freshSession();
   session.inputLabel = folderLabelFromFiles(files);
   session.outputLabel = "a downloaded .zip file";
@@ -188,6 +194,7 @@ function showConfirm(): void {
       outputLabel: session.outputLabel,
       outputMode: capabilities.outputMode,
       imageCount: result.images.length,
+      folderCount: result.folderCount,
       skipped: result.skipped,
       canChangeOutput: capabilities.outputMode === 'directory',
     },
@@ -218,7 +225,7 @@ function handleConfirmClick(): void {
   const result = session.scanResult;
   if (!result) return;
 
-  const collisionCount = result.images.filter((f) => result.existingOutputNames.has(f.name)).length;
+  const collisionCount = result.images.filter((f) => result.existingOutputNames.has(f.relativePath)).length;
   if (collisionCount === 0) {
     void startBatch('overwrite');
     return;
@@ -277,8 +284,38 @@ function renderRunningFrom(state: RunningState): void {
   );
 }
 
-async function writeToDirectory(outputDir: FileSystemDirectoryHandle, name: string, blob: Blob): Promise<void> {
-  const fileHandle = await outputDir.getFileHandle(name, { create: true });
+/**
+ * Resolve (creating as needed) the output subfolder for a relative path,
+ * mirroring the source tree's shape.
+ *
+ * Results are cached as *promises*, not handles. Several workers finish at
+ * once and will ask for the same new subfolder concurrently; caching the
+ * in-flight promise means they all await one `getDirectoryHandle` call
+ * instead of racing to create the same folder.
+ */
+const dirCache = new Map<string, Promise<FileSystemDirectoryHandle>>();
+
+function resolveOutputSubdir(outputRoot: FileSystemDirectoryHandle, segments: string[]): Promise<FileSystemDirectoryHandle> {
+  const key = segments.join('/');
+  const cached = dirCache.get(key);
+  if (cached) return cached;
+
+  const parentSegments = segments.slice(0, -1);
+  const created = (async () => {
+    const parent = segments.length === 0 ? outputRoot : await resolveOutputSubdir(outputRoot, parentSegments);
+    if (segments.length === 0) return parent;
+    return parent.getDirectoryHandle(segments[segments.length - 1], { create: true });
+  })();
+
+  dirCache.set(key, created);
+  return created;
+}
+
+async function writeToDirectory(outputDir: FileSystemDirectoryHandle, relativePath: string, blob: Blob): Promise<void> {
+  const parts = relativePath.split('/').filter(Boolean);
+  const name = parts[parts.length - 1];
+  const targetDir = await resolveOutputSubdir(outputDir, parts.slice(0, -1));
+  const fileHandle = await targetDir.getFileHandle(name, { create: true });
   const writable = await fileHandle.createWritable();
   try {
     await writable.write(blob);
@@ -337,11 +374,11 @@ async function startBatch(collisionPolicy: CollisionPolicy): Promise<void> {
 
   let images: ScannedFile[] = result.images;
   if (collisionPolicy === 'skip') {
-    const toSkip = images.filter((f) => result.existingOutputNames.has(f.name));
+    const toSkip = images.filter((f) => result.existingOutputNames.has(f.relativePath));
     for (const f of toSkip) {
-      outcomes.push({ name: f.name, status: 'skipped', reason: 'Already resized — skipped, as requested.' });
+      outcomes.push({ name: f.relativePath, status: 'skipped', reason: 'Already resized — skipped, as requested.' });
     }
-    images = images.filter((f) => !result.existingOutputNames.has(f.name));
+    images = images.filter((f) => !result.existingOutputNames.has(f.relativePath));
   }
 
   // The one moment anything is actually written: create the default output
@@ -358,7 +395,11 @@ async function startBatch(collisionPolicy: CollisionPolicy): Promise<void> {
       // theoretical case of getAsFileSystemHandle() falling back to the
       // legacy Files-only drag-and-drop path on a directory-capable browser.
       if (!session.inputDirHandle) return;
-      session.outputDirHandle = await session.inputDirHandle.getDirectoryHandle('resized', { create: true });
+      let dir = session.inputDirHandle;
+      for (const segment of OUTPUT_PATH_SEGMENTS) {
+        dir = await dir.getDirectoryHandle(segment, { create: true });
+      }
+      session.outputDirHandle = dir;
     }
   } else {
     zipSink = await createZipSink(session.lastZipName);

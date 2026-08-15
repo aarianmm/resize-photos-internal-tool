@@ -23,6 +23,10 @@ laptop, so it's the easy choice.
 Click **Choose folder…** and pick the folder with your photos in it — for
 example `3320`. You can also just drag the folder onto the page.
 
+If your photos are organised into subfolders, pick the folder **above** them.
+The tool looks inside every subfolder and keeps that structure in the results,
+so you can do all your batches in one go.
+
 Windows will ask you to confirm you're letting the page see that folder. Click
 **View files** / **Edit files**. It asks once, and only about the folder you
 picked.
@@ -31,8 +35,8 @@ picked.
 
 The tool tells you what it found:
 
-> Found **214 images** in `3320`. 3 files skipped.
-> They'll be written to `3320/resized/`.
+> Found **214 images** in `3320`, across **12 folders**. 3 files skipped.
+> They'll be written to `3320/done/resized/`.
 
 If the count looks wrong, stop and check you picked the right folder. Nothing
 has been changed yet at this point.
@@ -45,7 +49,8 @@ You'll see a progress bar. A few hundred photos usually takes a minute or two.
 Keep the tab open and your laptop awake while it runs — you can use other apps.
 
 When it's done you'll get a summary. Your resized photos are in a new folder
-called **`resized`** inside the folder you picked.
+called **`done`** inside the folder you picked, under `done/resized`. Any
+subfolders you had are recreated in there with the same names.
 
 ---
 
@@ -56,7 +61,7 @@ resizing happens inside your browser, on your own machine — which is also why
 it keeps working if your internet drops mid-batch.
 
 **Your original photos are not touched.** They stay exactly where they were,
-unchanged. The tool only ever adds a new `resized` folder. If something looks
+unchanged. The tool only ever adds a new `done` folder. If something looks
 wrong, your originals are still there.
 
 > ⚠️ This is different from the old process, which moved originals into a
@@ -66,7 +71,11 @@ wrong, your originals are still there.
 3000 × 3000. A photo that wasn't square to begin with will look squashed or
 stretched. That's intentional and matches what we've always done.
 
-**Filenames stay the same.** `CARAMELCAFÉ.jpg` comes out as `CARAMELCAFÉ.jpg`.
+**Filenames and folders stay the same.** `CARAMELCAFÉ.jpg` comes out as
+`CARAMELCAFÉ.jpg`, and a photo in `3320` comes out in `3320`.
+
+**Running it twice is safe.** The tool ignores its own `done` folder, so it
+won't resize photos it already resized.
 
 ---
 
