@@ -187,11 +187,25 @@ and suggest splitting rather than implementing it.
 
 ### 4.6 Format support
 
-Browsers decode **JPEG, PNG, WebP, GIF, BMP**, and (on modern Safari/Chrome)
-**AVIF**. They do **not** decode **TIFF or HEIC**. `task.md` mentions `.tif` as
-a possible input — those files will be detected by extension, skipped, and
-reported by name rather than silently dropped. If TIFF turns out to be common
-in real batches, that changes the plan (see §9).
+Three tiers, and the distinction matters more than it first looks:
+
+| Tier | Formats | Behaviour |
+|---|---|---|
+| Decode **and** encode | JPEG, PNG, WebP | Processed. Same filename, same format. |
+| Decode only | GIF, BMP, AVIF | **Skipped with an explanation.** |
+| Neither | TIFF, HEIC, RAW, PSD | Skipped with an explanation. |
+
+The middle tier was found during implementation. `OffscreenCanvas.convertToBlob`
+can only write JPEG, PNG and WebP — so a `.gif` could be decoded and resized,
+but only written back as JPEG bytes. Under the "filenames never change" rule
+that produces a `.gif` file that is secretly a JPEG: a file whose contents
+contradict its name, which no one would catch until something downstream
+choked on it. A clearly reported skip beats silent mislabelling, so those
+extensions are triaged out and the user is told to convert to JPEG first.
+
+`task.md` mentions `.tif` as a possible input. Those are detected by extension,
+skipped, and reported by name rather than silently dropped. If TIFF turns out
+to be common in real batches, that changes the plan (see §9).
 
 ---
 
@@ -271,6 +285,18 @@ unzip). These are the two places where a subtle bug is invisible in the UI.
 Safari, Firefox on both. Plus one **large-batch run** (500+ images) watching
 memory in the task manager.
 
+**Still outstanding — must happen before rollout:**
+
+- **Nobody has seen the UI in a real browser yet.** The build is green, tests
+  pass and every module serves, but rendering, the permission prompt, the
+  progress bar and the collision modal have not been exercised by a human.
+  This is the first thing to do, not the last.
+- **Open the fallback `.zip` in Windows Explorer.** The ZIP writer's UTF-8
+  filename handling is verified against macOS `unzip` and Python `zipfile`,
+  both of which now round-trip `CARAMELCAFÉ.jpg` intact. Explorer is a third
+  implementation with its own history of mangling non-ASCII names, and it is
+  the one our users actually have. Untested so far.
+
 **Parity check:** run the same folder through `sips -z 3000 3000` on the Mac and
 through the tool, and compare dimensions across every file plus a visual diff on
 a sample. This is what proves the replacement is safe to hand over.
@@ -306,6 +332,8 @@ a sample. This is what proves the replacement is safe to hand over.
 | Very large batches exhaust memory | Tab crash mid-batch | Bounded worker pool, eager `bitmap.close()`, 500-image test in Phase 3 |
 | Quality 92 visibly degrades a photo | Rejected output | Side-by-side check during the parity run; quality is one constant to change if not |
 | Users expect the old `Done/original` behaviour | Confusion during handover | Called out explicitly in the internal guide: originals stay exactly where they are |
+| Windows Explorer mangles accented names in the fallback `.zip` | `CARAMELCAFÉ.jpg` extracts as mojibake | UTF-8 flag, UNIX host byte and Unicode Path extra field all set; **still needs a real Explorer test** (§7) |
+| "Open output folder" button is impossible | Minor UX gap | No web API can open a native file-explorer window at a directory handle. The output path is stated as text instead of shipping a dead button |
 
 ---
 

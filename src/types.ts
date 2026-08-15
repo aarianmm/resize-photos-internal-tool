@@ -12,8 +12,20 @@ export const TARGET_HEIGHT = 3000;
 /** JPEG re-encode quality. See PLAN.md §2. */
 export const JPEG_QUALITY = 0.92;
 
-/** Extensions browsers can decode. Anything else is triaged out before work starts. */
-export const SUPPORTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.avif'] as const;
+/**
+ * Extensions we can both decode AND re-encode, so output keeps the source's
+ * format and filename. Anything else is triaged out before work starts.
+ */
+export const SUPPORTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'] as const;
+
+/**
+ * Formats browsers can decode but `convertToBlob` cannot write back. We could
+ * resize these and emit JPEG bytes, but only under the original filename —
+ * producing a `.gif` that is secretly a JPEG. Silently mislabelled files are
+ * worse than a clearly reported skip, and the promise in PLAN.md §2 is that
+ * format and filename are both unchanged. So we skip and say why.
+ */
+export const DECODE_ONLY_EXTENSIONS = ['.bmp', '.gif', '.avif'] as const;
 
 /** Extensions we expect to meet and know we cannot handle, so we can say why. */
 export const KNOWN_UNSUPPORTED_EXTENSIONS = ['.tif', '.tiff', '.heic', '.heif', '.raw', '.cr2', '.nef', '.arw', '.dng', '.psd'] as const;
