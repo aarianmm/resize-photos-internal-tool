@@ -10,6 +10,20 @@
   <body>
     <div id="banner"></div>
     <main id="app" class="app"></main>
+    <!--
+      The footer lives here rather than being rendered by ui.ts: state changes
+      rebuild #app from scratch, and the logo should not flicker between the
+      idle, running and done screens.
+    -->
+    <footer class="site-footer">
+      <img
+        class="site-footer__logo"
+        src="./src/assets/lloyd-baker-logo.png"
+        alt="Lloyd Baker London"
+        width="200"
+        height="99"
+      />
+    </footer>
     <div id="modal-root"></div>
     <script type="module" src="./src/main.ts"></script>
   </body>
