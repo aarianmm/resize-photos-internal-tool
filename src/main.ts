@@ -58,6 +58,17 @@ interface Session {
   lastZipName: string;
 }
 
+/**
+ * Resolve (creating as needed) the output subfolder for a relative path,
+ * mirroring the source tree's shape.
+ *
+ * Results are cached as *promises*, not handles. Several workers finish at
+ * once and will ask for the same new subfolder concurrently; caching the
+ * in-flight promise means they all await one `getDirectoryHandle` call
+ * instead of racing to create the same folder.
+ */
+const dirCache = new Map<string, Promise<FileSystemDirectoryHandle>>();
+
 function freshSession(): Session {
   dirCache.clear();
   return {
@@ -283,17 +294,6 @@ function renderRunningFrom(state: RunningState): void {
     },
   );
 }
-
-/**
- * Resolve (creating as needed) the output subfolder for a relative path,
- * mirroring the source tree's shape.
- *
- * Results are cached as *promises*, not handles. Several workers finish at
- * once and will ask for the same new subfolder concurrently; caching the
- * in-flight promise means they all await one `getDirectoryHandle` call
- * instead of racing to create the same folder.
- */
-const dirCache = new Map<string, Promise<FileSystemDirectoryHandle>>();
 
 function resolveOutputSubdir(outputRoot: FileSystemDirectoryHandle, segments: string[]): Promise<FileSystemDirectoryHandle> {
   const key = segments.join('/');
